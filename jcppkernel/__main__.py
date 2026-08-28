@@ -103,6 +103,10 @@ class CPPKernel(Kernel):
             [
                 "g++",
                 source_filename,
+                # NSYSU MATH208: 讓 cell 裡的 #include "dscpp/xxx.hpp" 能以
+                # 「編譯當下的工作目錄」為基準解析。kernel 會把 cell 寫進暫存檔再編譯，
+                # 沒有這一行的話，帶引號的相對 include 只會去暫存目錄找，一定失敗。
+                "-I.",
                 "-pedantic",
                 "-fPIC",
                 f"-std={self.standard}",
