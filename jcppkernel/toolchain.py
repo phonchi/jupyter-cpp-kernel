@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 
 # winlibs GitHub release 是唯一官方來源。tag 與檔名寫死，確保每台機器拿到同一份。
@@ -41,6 +42,15 @@ GCC_VERSION = "12.1.0"
 
 # zip 解開後頂層就是 mingw64/
 TOOLCHAIN_DIRNAME = "mingw64"
+
+# 同一台機器上可能同時開好幾個 notebook，每個 kernel 都是獨立行程。
+# 沒有鎖的話它們會同時寫同一個 .part：sha256 各自對自己的網路串流算，
+# 兩邊都會通過，但磁碟上是交錯的垃圾。所以下載＋解壓整段要互斥。
+LOCK_NAME = "install.lock"
+LOCK_STALE_SECONDS = 30 * 60      # 鎖檔超過這麼久沒更新就視為前一個行程死掉了
+LOCK_WAIT_SECONDS = 40 * 60       # 等待方的上限
+LOCK_POLL_SECONDS = 2
+LOCK_NOTICE_SECONDS = 15
 
 
 class ToolchainError(RuntimeError):
@@ -175,6 +185,62 @@ def _broadcast_setting_change():
 
 # --- 下載與安裝 ------------------------------------------------------------
 
+def _pid_alive(pid):
+    """這個 pid 還活著嗎？判斷鎖檔是不是前一個當掉的行程留下的。"""
+    if not pid or pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except Exception:
+            return True      # 查不出來就當它還活著，交給 mtime 逾時處理
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True          # 別人的行程，但確實存在
+    except OSError:
+        return True
+    return True
+
+
+def _lock_is_stale(lock_path):
+    """鎖檔是不是已經沒有主人了（行程不在，或放太久）。"""
+    try:
+        age = time.time() - os.path.getmtime(lock_path)
+    except OSError:
+        return False         # 剛好被別人刪掉了，不算 stale，重跑迴圈即可
+    if age > LOCK_STALE_SECONDS:
+        return True
+    try:
+        with open(lock_path, "r", encoding="utf-8") as fh:
+            pid = int((fh.readline() or "0").strip() or 0)
+    except (OSError, ValueError):
+        return False         # 可能正在被寫入，下一輪再看
+    return not _pid_alive(pid)
+
+
+def _try_acquire_lock(lock_path):
+    """O_EXCL 建檔即取得鎖；拿不到回傳 False。"""
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    try:
+        os.write(fd, ("%d\n%f\n" % (os.getpid(), time.time())).encode("ascii"))
+    finally:
+        os.close(fd)
+    return True
+
+
 def _download(url, dest, progress):
     import urllib.request
 
@@ -244,6 +310,87 @@ def _extract(zip_path, root, progress):
     return final
 
 
+def _download_and_extract(root, progress):
+    """實際的下載→校驗→解壓→原子改名。呼叫端必須已經持有鎖。"""
+    zip_path = os.path.join(root, "download", ZIP_NAME)
+
+    if os.path.isfile(zip_path) and os.path.getsize(zip_path) == ZIP_SIZE:
+        if progress:
+            progress("已有下載好的壓縮檔，跳過下載。")
+    else:
+        if progress:
+            progress("第一次使用：正在下載 GCC %s（198 MB）到 %s，"
+                     "約 2–5 分鐘，之後不會再出現。" % (GCC_VERSION, root))
+        _download(zip_url(), zip_path, progress)
+
+    _extract(zip_path, root, progress)
+
+    if not os.environ.get("JCPP_KEEP_ZIP"):
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+
+
+def _install_under_lock(root, progress, allow_skip=True):
+    """取得 install.lock 後安裝；拿不到鎖就等另一個 kernel 裝完。
+
+    allow_skip=False（--force）表示就算已經裝好了也要重裝一次。
+    """
+    lock_path = os.path.join(root, LOCK_NAME)
+    gxx = os.path.join(root, TOOLCHAIN_DIRNAME, "bin", MANAGED_GXX_NAME)
+    deadline = time.time() + LOCK_WAIT_SECONDS
+    last_notice = 0.0
+    waited = False
+
+    while True:
+        # 先看是不是已經裝好了 —— 等待方醒來時鎖多半已經釋放，
+        # 這個檢查要排在搶鎖之前，否則它會搶到鎖再重下載一次。
+        if allow_skip and os.path.isfile(gxx) and not os.path.exists(lock_path):
+            if progress and waited:
+                progress("另一個 kernel 已完成安裝，直接使用。")
+            return
+
+        if _try_acquire_lock(lock_path):
+            try:
+                # 拿到鎖後再確認一次：可能在搶鎖的空檔對方剛裝完
+                if allow_skip and os.path.isfile(gxx):
+                    if progress and waited:
+                        progress("另一個 kernel 已完成安裝，直接使用。")
+                    return
+                _download_and_extract(root, progress)
+            finally:
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+            return
+
+        # 鎖在別人手上。先確認那個「別人」還在。
+        waited = True
+        if _lock_is_stale(lock_path):
+            if progress:
+                progress("發現前一次安裝殘留的鎖檔，清除後重試。")
+            try:
+                os.remove(lock_path)
+            except OSError:
+                pass
+            continue
+
+        if time.time() > deadline:
+            raise ToolchainError(
+                "等待另一個 kernel 完成安裝超過 %d 分鐘。\n"
+                "如果確定沒有其他 kernel 正在下載，請手動刪除這個檔案後重試：\n"
+                "  %s" % (LOCK_WAIT_SECONDS // 60, lock_path)
+            )
+
+        now = time.time()
+        if progress and now - last_notice >= LOCK_NOTICE_SECONDS:
+            last_notice = now
+            progress("另一個 kernel 正在下載，等待中…")
+        time.sleep(LOCK_POLL_SECONDS)
+
+
 def ensure_toolchain(progress=None, force=False):
     """確保有可用的 g++；必要時下載安裝。回傳 Toolchain。
 
@@ -262,26 +409,7 @@ def ensure_toolchain(progress=None, force=False):
         )
 
     os.makedirs(root, exist_ok=True)
-    zip_path = os.path.join(root, "download", ZIP_NAME)
-
-    need_download = True
-    if os.path.isfile(zip_path) and os.path.getsize(zip_path) == ZIP_SIZE:
-        if progress:
-            progress("已有下載好的壓縮檔，跳過下載。")
-        need_download = False
-    if need_download:
-        if progress:
-            progress("第一次使用：正在下載 GCC %s（198 MB）到 %s，"
-                     "約 2–5 分鐘，之後不會再出現。" % (GCC_VERSION, root))
-        _download(zip_url(), zip_path, progress)
-
-    _extract(zip_path, root, progress)
-
-    if not os.environ.get("JCPP_KEEP_ZIP"):
-        try:
-            os.remove(zip_path)
-        except OSError:
-            pass
+    _install_under_lock(root, progress, allow_skip=not force)
 
     bin_dir = os.path.join(root, TOOLCHAIN_DIRNAME, "bin")
     gxx = os.path.join(bin_dir, MANAGED_GXX_NAME)
