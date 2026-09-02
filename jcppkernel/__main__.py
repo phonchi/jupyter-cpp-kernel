@@ -7,6 +7,7 @@ from .realtime_subprocess import RealTimeSubprocess
 from .code_processing import CPPCodeProcessingUnit
 from .temp_file_processing import CPPTempFileProcessing
 from .python_quiz_cells import is_quiz_cell, QuizPythonRuntime
+from .toolchain import find_toolchain, ensure_toolchain, subprocess_env, ToolchainError
 
 class CPPKernel(Kernel):
     implementation = "jupyter_cpp_kernel"
@@ -50,14 +51,26 @@ class CPPKernel(Kernel):
         else:
             self._end_line_sys = "\n"
 
+        self.resDir = path.join(path.dirname(path.realpath(__file__)), "resources")
+
+        # NSYSU MATH208: 工具鏈可能還不存在（Windows 教室機每次重置）。
+        # 這裡只「找」，不下載 —— __init__ 沒有輸出管道，在這裡卡幾分鐘
+        # Jupyter 會以為 kernel 啟動失敗。真正的下載延到第一個 C++ cell。
+        self.toolchain = find_toolchain()
+        self.master_path = None
+        if self.toolchain:
+            self._build_master()
+
+    def _build_master(self):
+        """用目前的工具鏈編出 master 執行檔（載入並執行每個 cell 編出的 .so）。"""
         master_temp = mkstemp(suffix=".out")
         fsclose(master_temp[0])
         self.master_path = master_temp[1]
-        self.resDir = path.join(path.dirname(path.realpath(__file__)), "resources")
+        self.files.append(self.master_path)
         filepath = path.join(self.resDir, "master.cpp")
-        subprocess.call(
+        rc = subprocess.call(
             [
-                "g++",
+                self.toolchain.gxx,
                 filepath,
                 f"-std={self.standard}",
                 "-Wno-unused-but-set-variable",
@@ -67,8 +80,46 @@ class CPPKernel(Kernel):
                 "-w",
                 "-o",
                 self.master_path,
-            ]
+            ],
+            env=subprocess_env(self.toolchain.bin_dir),
         )
+        if rc != 0:
+            self.master_path = None
+        return rc == 0
+
+    _TOOLCHAIN_HELP = (
+        "\n[C++ kernel] 取得 C++ 編譯器失敗。\n"
+        "  可以改用手動安裝（教材 00B 的 PART 04 有完整步驟），\n"
+        "  或是已經有 g++ 的話，設定環境變數 JCPP_GXX 指向 g++ 的完整路徑，\n"
+        "  例如 JCPP_GXX=C:\\msys64\\ucrt64\\bin\\g++.exe，然後重啟 kernel。\n"
+    )
+
+    def _ensure_ready(self):
+        """確保 master 執行檔就緒；Windows 首次使用會在這裡下載工具鏈。"""
+        if self.master_path:
+            return True
+
+        if not self.toolchain:
+            try:
+                self.toolchain = ensure_toolchain(
+                    progress=lambda msg: self._write_to_stderr("[C++ kernel] " + msg + "\n")
+                )
+            except ToolchainError as exc:
+                self._write_to_stderr("\n[C++ kernel] " + str(exc) + "\n" + self._TOOLCHAIN_HELP)
+                return False
+            except Exception as exc:   # 網路等意外，kernel 不該掛掉
+                self._write_to_stderr(
+                    "\n[C++ kernel] 下載編譯器時發生非預期錯誤：%r\n" % (exc,) + self._TOOLCHAIN_HELP
+                )
+                return False
+
+        if not self._build_master():
+            self._write_to_stderr(
+                "\n[C++ kernel] 編譯器可用（%s），但 master 執行檔編譯失敗。\n"
+                % self.toolchain.gxx + self._TOOLCHAIN_HELP
+            )
+            return False
+        return True
 
     @property
     def banner(self):
@@ -112,14 +163,16 @@ class CPPKernel(Kernel):
         return self.raw_input()
 
     def _create_jupyter_subprocess(self, cmd):
+        bin_dir = self.toolchain.bin_dir if self.toolchain else None
         return RealTimeSubprocess(
-            cmd, self._write_to_stdout, self._write_to_stderr, self._read_from_stdin
+            cmd, self._write_to_stdout, self._write_to_stderr, self._read_from_stdin,
+            env=subprocess_env(bin_dir),
         )
 
     def _compile_with_gpp(self, source_filename, binary_filename):
         return self._create_jupyter_subprocess(
             [
-                "g++",
+                self.toolchain.gxx,
                 source_filename,
                 # NSYSU MATH208: 讓 cell 裡的 #include "dscpp/xxx.hpp" 能以
                 # 「編譯當下的工作目錄」為基準解析。kernel 會把 cell 寫進暫存檔再編譯，
@@ -154,6 +207,17 @@ class CPPKernel(Kernel):
             reply = self._py_runtime.execute(code, silent)
             reply["execution_count"] = self.execution_count
             return reply
+
+        # NSYSU MATH208: 以下都需要編譯器。Python 測驗 cell 已在上面處理完，
+        # 不會被首次下載擋住。
+        if not self._ensure_ready():
+            return {
+                "status": "error",
+                "ename": "ToolchainError",
+                "evalue": "C++ 編譯器不可用",
+                "traceback": [],
+                "execution_count": self.execution_count,
+            }
 
         cpp_res_path = f'"{self.resDir}/gcpph.hpp"'
         code = CPPCodeProcessingUnit()._add_code_compat(code, cpp_res_path)

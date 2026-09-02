@@ -28,6 +28,13 @@ setup(
                 'jupyter-cpp-kernel-23'],
       keywords=['windows', 'macos', 'linux', 'jupyter', 'cpp', 'jupyter-kernels', 'pip'],
       include_package_data=True,
+      # NSYSU MATH208: pip install --user 時 data_files 會落到 Jupyter 搜不到的路徑，
+      # 所以另外提供這支 CLI 用 KernelSpecManager 正確安裝 kernelspec。
+      entry_points={
+          'console_scripts': [
+              'jupyter-cpp-kernel-setup = jcppkernel.setup_cli:main',
+          ],
+      },
       data_files=[
           ("share/jupyter/kernels/cpp98", 
             ["jupyter-cpp-kernel-98/kernel_spec/logo-64x64.png", "jupyter-cpp-kernel-98/kernel_spec/kernel.json", "jupyter-cpp-kernel-98/kernel_spec/logo-32x32.png", "jupyter-cpp-kernel-98/kernel_spec/logo-svg.svg"]),

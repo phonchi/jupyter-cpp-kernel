@@ -5,11 +5,13 @@ import subprocess
 class RealTimeSubprocess(subprocess.Popen):
     inputRequest = "<inputRequest>"
 
-    def __init__(self, cmd, write_to_stdout, write_to_stderr, read_from_stdin):
+    def __init__(self, cmd, write_to_stdout, write_to_stderr, read_from_stdin, env=None):
         self._write_to_stdout = write_to_stdout
         self._write_to_stderr = write_to_stderr
         self._read_from_stdin = read_from_stdin
-        super().__init__(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE,bufsize=0)
+        # NSYSU MATH208: env 透傳。Windows 上工具鏈的 bin 要排在 PATH 最前面，
+        # 否則 Anaconda 那份較舊的 libstdc++-6.dll 會被優先載入而執行失敗。
+        super().__init__(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE,bufsize=0, env=env)
         self._stdout_queue = Queue()
         self._stdout_thread = Thread(target=RealTimeSubprocess._enqueue_output, args=(self.stdout, self._stdout_queue))
         self._stdout_thread.daemon = True

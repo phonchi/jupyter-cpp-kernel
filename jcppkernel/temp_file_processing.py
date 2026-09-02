@@ -11,7 +11,11 @@ class CPPTempFileProcessing:
         return file
     
     def _cleanup_files(self, master_path, files):
-        for file in files:
-            if path.exists(file):
-                remove(file)
-        remove(master_path)
+        # NSYSU MATH208: master_path 可能是 None（工具鏈還沒就緒），
+        # 也可能已經在 files 裡（_build_master 會登記），所以兩邊都要防重複／防 None。
+        for file in list(files) + [master_path]:
+            if file and path.exists(file):
+                try:
+                    remove(file)
+                except OSError:
+                    pass
