@@ -85,11 +85,12 @@ class CPPKernel(Kernel):
         )
 
     def _write_to_stdout(self, contents):
-        contents = contents.replace(self._end_line_sys, self._end_line_sys * 2)
+        # NSYSU MATH208: 上游把每個換行加倍後以 text/markdown 送出，結果每一行都變成
+        # 一個段落（看起來多一個空行），而且 * _ < 等字元會被 markdown 吃掉。
+        # 改成標準 stream 純文字輸出：換行一比一、內容原樣呈現；Windows 的 \r\n 統一成 \n。
+        contents = contents.replace("\r\n", "\n")
         self.send_response(
-            self.iopub_socket,
-            "display_data",
-            {"data": {"text/markdown": contents}, "metadata": {}},
+            self.iopub_socket, "stream", {"name": "stdout", "text": contents}
         )
 
     def _write_to_stdout_raw(self, contents):
