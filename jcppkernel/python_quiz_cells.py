@@ -107,6 +107,8 @@ class QuizPythonRuntime:
     # -- display 攔截 --
 
     def _display(self, *objs, **kwargs):
+        if self._silent:      # Jupyter 協定：silent 的 cell 不得產生任何輸出
+            return
         for obj in objs:
             self._publish(self._to_bundle(obj))
 
