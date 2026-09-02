@@ -6,6 +6,7 @@ import subprocess
 from .realtime_subprocess import RealTimeSubprocess
 from .code_processing import CPPCodeProcessingUnit
 from .temp_file_processing import CPPTempFileProcessing
+from .python_quiz_cells import is_quiz_cell, QuizPythonRuntime
 
 class CPPKernel(Kernel):
     implementation = "jupyter_cpp_kernel"
@@ -37,6 +38,12 @@ class CPPKernel(Kernel):
         super(CPPKernel, self).__init__(*args, **kwargs)
         self._allow_stdin = True
         self.files = []
+
+        # NSYSU MATH208: 課程講義穿插 jupyterquiz / jupytercards 的 Python 測驗 cell，
+        # 這個 runtime 讓它們在 C++ kernel 裡也能執行（見 python_quiz_cells.py）。
+        self._py_runtime = QuizPythonRuntime(
+            self._publish_display_data, self._write_to_stderr, self._write_to_stdout_raw
+        )
 
         if ostype == "nt":
             self._end_line_sys = "\r\n"
@@ -85,6 +92,16 @@ class CPPKernel(Kernel):
             {"data": {"text/markdown": contents}, "metadata": {}},
         )
 
+    def _write_to_stdout_raw(self, contents):
+        self.send_response(
+            self.iopub_socket, "stream", {"name": "stdout", "text": contents}
+        )
+
+    def _publish_display_data(self, bundle):
+        self.send_response(
+            self.iopub_socket, "display_data", {"data": bundle, "metadata": {}}
+        )
+
     def _write_to_stderr(self, contents):
         self.send_response(
             self.iopub_socket, "stream", {"name": "stderr", "text": contents}
@@ -126,6 +143,13 @@ class CPPKernel(Kernel):
     def do_execute(
         self, code, silent, store_history=True, user_expressions=None, allow_stdin=True
     ):
+        # NSYSU MATH208: Python 測驗 cell 走另一條路，不進 g++。
+        # is_quiz_cell() 是保守白名單，任何不確定的 cell 都會落回下面的 C++ 流程。
+        if is_quiz_cell(code):
+            reply = self._py_runtime.execute(code, silent)
+            reply["execution_count"] = self.execution_count
+            return reply
+
         cpp_res_path = f'"{self.resDir}/gcpph.hpp"'
         code = CPPCodeProcessingUnit()._add_code_compat(code, cpp_res_path)
         

@@ -25,6 +25,9 @@ class RealTimeSubprocess(subprocess.Popen):
         stream.close()
 
     def write_contents(self):
+        # NSYSU MATH208: 子行程輸出一律以 UTF-8 解碼，errors="replace" 避免
+        # 半個多位元組字元剛好被 64KB 讀取邊界切開時整個 cell 崩掉。
+
         def read_all_from_queue(queue):
             res = b""
             size = queue.qsize()
@@ -34,11 +37,11 @@ class RealTimeSubprocess(subprocess.Popen):
             return res
 
         stderr_contents = read_all_from_queue(self._stderr_queue)
-        if stderr_contents: self._write_to_stderr(stderr_contents.decode())
+        if stderr_contents: self._write_to_stderr(stderr_contents.decode("utf-8", errors="replace"))
 
         stdout_contents = read_all_from_queue(self._stdout_queue)
         if stdout_contents:
-            contents = stdout_contents.decode()
+            contents = stdout_contents.decode("utf-8", errors="replace")
             start = contents.find(self.__class__.inputRequest)
             if start >= 0:
                 contents = contents.replace(self.__class__.inputRequest, "")

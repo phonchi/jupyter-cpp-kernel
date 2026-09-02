@@ -4,8 +4,11 @@
         "-m",
         "jupyter-cpp-kernel-14",
         "-f",
-        "\"{connection_file}\""
+        "{connection_file}"
     ],
     "display_name": "C++ 14",
-    "language": "c++"
+    "language": "c++",
+    "env": {
+        "PYTHONUTF8": "1"
+    }
 }
