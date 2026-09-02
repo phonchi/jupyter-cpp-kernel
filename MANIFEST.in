@@ -6,3 +6,4 @@ include jcppkernel/resources/cppio/cppout.hpp
 include jcppkernel/resources/cppio/cppin.hpp
 include jcppkernel/resources/gcpph.hpp
 include README.md LICENSE SECURITY.md
+recursive-include jcppkernel/resources/pythonds3 *.hpp

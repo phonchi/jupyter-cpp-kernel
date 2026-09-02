@@ -124,6 +124,10 @@ class CPPKernel(Kernel):
                 # 「編譯當下的工作目錄」為基準解析。kernel 會把 cell 寫進暫存檔再編譯，
                 # 沒有這一行的話，帶引號的相對 include 只會去暫存目錄找，一定失敗。
                 "-I.",
+                # NSYSU MATH208: 課程標頭（pythonds3/cppds/*.hpp）直接內建在 kernel 套件裡，
+                # 學生只要下載 .ipynb 就能 #include "pythonds3/cppds/stack.hpp"，不必另外 clone。
+                # -I. 放前面，工作目錄若有自己的 pythonds3/ 會優先。
+                "-I" + self.resDir,
                 "-pedantic",
                 "-fPIC",
                 f"-std={self.standard}",
