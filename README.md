@@ -99,6 +99,8 @@ gcc plugin 開發檔、gdb 內嵌 Python 的 test/ensurepip/idlelib，以及 loc
 | `JCPP_TOOLCHAIN_URL` | 覆寫成單一下載來源（例如校內鏡像） |
 | `JCPP_TOOLCHAIN_SHA256` / `JCPP_TOOLCHAIN_SIZE` | 搭配上面使用；沒給 sha 就只驗大小並印警告 |
 | `JCPP_DOWNLOAD_CONNECTIONS` | 分段下載的連線數，預設 8，設 1 就是單連線 |
+| `JCPP_DOWNLOAD_CHUNK_MB` | 每個工作分塊的大小，預設 4（MB） |
+| `JCPP_DOWNLOAD_STALL_S` | 連線多久沒收到資料就判定停滯並重抓，預設 10（秒） |
 | `JCPP_MANAGED_ROOT` | 覆寫受管安裝根目錄（測試用） |
 | `JCPP_KEEP_ZIP` | 安裝完保留壓縮檔 |
 

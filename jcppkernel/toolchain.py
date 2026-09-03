@@ -20,15 +20,18 @@ bin 目錄插到 PATH 最前面。Windows 上 Anaconda 會用自己那份較舊�
 CLI：`python -m jcppkernel.toolchain [--status|--install|--force]`
 """
 
-import concurrent.futures
+import collections
 import hashlib
+import http.client
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import unicodedata
 import zipfile
 
@@ -72,6 +75,20 @@ TOOLCHAIN_SOURCES = [
 DEFAULT_CONNECTIONS = 8
 MAX_CONNECTIONS = 16
 SEGMENT_RETRIES = 3
+
+# 不要把檔案切成 N 等份 —— 只要有一條連線被限速，其他 N-1 份都做完了還要等它，
+# 整個下載就卡在最後一份（使用者實測「一開始很快、後面龜速」就是這個）。
+# 改成切成很多小塊丟進工作佇列，快的連線自然會多做幾塊，慢的少做幾塊。
+DEFAULT_CHUNK_MB = 4
+CHUNK_MAX_ATTEMPTS = 5      # 同一塊重試幾次才算整體失敗
+DEFAULT_STALL_SECONDS = 10  # 連續多久沒收到 byte 就判定這條連線死了
+CHUNK_TIMEOUT_SECONDS = 60  # 單一塊的總時限
+# 佇列空了以後，對跑超過這麼久的塊發重複請求。只有在 worker 已經閒著、
+# 沒有別的事可做時才會觸發，所以門檻可以壓得很低 —— 實測尾端耗時幾乎
+# 就等於這個值（5s→6.4s、3s→4.8s、2s→3.2s，全快連線是 1.2s）。
+TAIL_DUP_AFTER = 2.0
+TAIL_DUP_MAX = 2            # 同一塊最多重複幾次（重複的那條也可能是慢的）
+READ_BLOCK = 64 * 1024
 ZIP_NAME = "mingw64-gcc-12.1.0-ucrt-r3.zip"   # 下載後暫存的檔名（與來源無關）
 # 舊名保留：指向 winlibs 原版的大小與摘要。實際校驗一律用該來源自己的 size/sha256。
 ZIP_SIZE = 208612121
@@ -313,6 +330,22 @@ def zip_sources():
             "[jcppkernel] 警告：JCPP_TOOLCHAIN_URL 沒有搭配 JCPP_TOOLCHAIN_SHA256，"
             "將只檢查檔案大小，不驗證內容摘要。\n")
     return [{"url": override, "size": size, "sha256": sha, "label": "自訂來源"}]
+
+
+def _chunk_size():
+    try:
+        mb = float(os.environ.get("JCPP_DOWNLOAD_CHUNK_MB", DEFAULT_CHUNK_MB))
+    except ValueError:
+        mb = DEFAULT_CHUNK_MB
+    return max(256 * 1024, int(mb * 1024 * 1024))
+
+
+def _stall_seconds():
+    try:
+        return max(1.0, float(os.environ.get("JCPP_DOWNLOAD_STALL_S",
+                                             DEFAULT_STALL_SECONDS)))
+    except ValueError:
+        return float(DEFAULT_STALL_SECONDS)
 
 
 def _connection_count():
@@ -618,77 +651,220 @@ def _download_single(url, part, progress, started, label=""):
     return written
 
 
-def _download_segmented(url, part, total, connections, progress, started, label=""):
-    """把檔案切成等份，多條連線各抓一段寫進同一個檔的對應 offset。
+class _Aborted(Exception):
+    """這一塊已經被別的連線做完了，中止目前這次讀取。"""
 
-    每個執行緒自己 open 一個 handle 用 seek+write，不共用 file object。
-    任一段重試 3 次仍失敗就往外拋，由呼叫端退回單連線。
+
+class _ChunkFetcher:
+    """一條 keep-alive 連線，重複用來抓多個 chunk。
+
+    302 只跟一次，之後記住最終的 host/path 直接連過去。
+    socket timeout 就是停滯偵測：連續 stall 秒沒收到任何 byte 就丟例外。
     """
-    # 先把 .part 撐到全長，這樣各段 seek 到自己的 offset 就能直接寫
+
+    def __init__(self, url, stall_seconds):
+        self._stall = stall_seconds
+        self._conn = None
+        self._set_url(url)
+
+    def _set_url(self, url):
+        parts = urllib.parse.urlsplit(url)
+        self._scheme = parts.scheme
+        self._host = parts.netloc
+        self._path = urllib.parse.urlunsplit(("", "", parts.path, parts.query, "")) or "/"
+
+    def _connect(self):
+        self.close()
+        if self._scheme == "https":
+            self._conn = http.client.HTTPSConnection(self._host, timeout=self._stall)
+        else:
+            self._conn = http.client.HTTPConnection(self._host, timeout=self._stall)
+
+    def close(self):
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
+    def _request(self, begin, end):
+        headers = {
+            "Range": "bytes=%d-%d" % (begin, end),
+            "Accept-Encoding": "identity",
+            "User-Agent": "jupyter-cpp-kernel",
+            "Connection": "keep-alive",
+        }
+        if self._conn is None:
+            self._connect()
+        self._conn.request("GET", self._path, headers=headers)
+        return self._conn.getresponse()
+
+    def fetch(self, begin, end, should_abort):
+        size = end - begin + 1
+        resp = self._request(begin, end)
+
+        if resp.status in (301, 302, 303, 307, 308):
+            location = resp.getheader("Location")
+            resp.read()
+            if not location:
+                raise IOError("重新導向但沒有 Location")
+            self._set_url(urllib.parse.urljoin(
+                "%s://%s%s" % (self._scheme, self._host, self._path), location))
+            self._connect()
+            resp = self._request(begin, end)
+
+        if resp.status != 206:
+            resp.read()
+            raise IOError("伺服器回應 %s，不是 206 Partial Content" % resp.status)
+
+        buf = bytearray()
+        deadline = time.monotonic() + CHUNK_TIMEOUT_SECONDS
+        while len(buf) < size:
+            if should_abort():
+                raise _Aborted()
+            block = resp.read(min(READ_BLOCK, size - len(buf)))
+            if not block:
+                break
+            buf += block
+            if time.monotonic() > deadline:
+                raise IOError("單一分塊超過 %d 秒未完成" % CHUNK_TIMEOUT_SECONDS)
+        if len(buf) != size:
+            raise IOError("分塊長度不符：拿到 %d，預期 %d" % (len(buf), size))
+        return bytes(buf)
+
+
+def _download_segmented(url, part, total, connections, progress, started, label=""):
+    """小塊工作佇列式的多連線下載。
+
+    檔案切成固定大小的 chunk 丟進 queue，N 個 worker 各自取用。快的連線自然
+    多做幾塊、慢的少做幾塊，不會像等份法那樣卡在最慢的那一份。
+    佇列空了之後，閒置的 worker 會對「還在飛且已經跑很久」的塊發重複請求，
+    先完成的算數（tail duplication），專治尾端某條連線被限速。
+    """
+    chunk_size = _chunk_size()
+    stall = _stall_seconds()
+    count = (total + chunk_size - 1) // chunk_size
+
     with open(part, "wb") as fh:
         fh.truncate(total)
 
-    span = total // connections
-    segments = []
-    for i in range(connections):
-        begin = i * span
-        finish = total - 1 if i == connections - 1 else (i + 1) * span - 1
-        segments.append((begin, finish))
+    pending = queue.Queue()
+    for index in range(count):
+        pending.put(index)
 
-    done = 0
     lock = threading.Lock()
+    stop = threading.Event()
+    completed = set()
+    inflight = {}                       # index -> 開始時間
+    attempts = collections.Counter()
+    duplicated = collections.Counter()
+    failures = []
+    landed = 0                          # 只算「整塊寫進檔案」的量
 
-    def fetch(begin, finish):
-        import urllib.request
+    def bounds(index):
+        begin = index * chunk_size
+        return begin, min(total - 1, begin + chunk_size - 1)
 
-        nonlocal done
-        expected = finish - begin + 1
-        last_error = None
-        for attempt in range(SEGMENT_RETRIES):
-            got = 0
-            try:
-                req = urllib.request.Request(
-                    url, headers={"Range": "bytes=%d-%d" % (begin, finish)})
-                # 重新 urlopen 會重新跟隨 302，換到新的 CDN 節點
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    if getattr(resp, "status", resp.getcode()) != 206:
-                        raise IOError("伺服器沒有回應 206 Partial Content")
-                    with open(part, "r+b") as fh:
-                        fh.seek(begin)
-                        while True:
-                            chunk = resp.read(1024 * 256)
-                            if not chunk:
-                                break
-                            fh.write(chunk)
-                            got += len(chunk)
-                            with lock:
-                                done += len(chunk)
-                if got != expected:
-                    raise IOError("段長度不符：拿到 %d，預期 %d" % (got, expected))
-                return
-            except Exception as exc:
-                last_error = exc
+    def take_tail_job():
+        """佇列空了：挑一個跑最久、還沒被複製過的進行中分塊來重複請求。"""
+        now = time.monotonic()
+        with lock:
+            candidates = [i for i, t in inflight.items()
+                          if i not in completed
+                          and now - t > TAIL_DUP_AFTER
+                          and duplicated[i] < TAIL_DUP_MAX]
+            if not candidates:
+                return None
+            index = min(candidates, key=lambda i: inflight[i])
+            duplicated[index] += 1
+            return index
+
+    def worker():
+        nonlocal landed
+        fetcher = _ChunkFetcher(url, stall)
+        try:
+            while not stop.is_set():
+                try:
+                    index = pending.get_nowait()
+                except queue.Empty:
+                    index = take_tail_job()
+                    if index is None:
+                        with lock:
+                            if len(completed) >= count:
+                                return
+                        time.sleep(0.2)
+                        continue
+
                 with lock:
-                    done -= got          # 這一輪白做了，把計數扣回去
-                if attempt < SEGMENT_RETRIES - 1:
-                    time.sleep(1.0 + attempt)
-        raise IOError("分段 %d-%d 重試 %d 次仍失敗：%s"
-                      % (begin, finish, SEGMENT_RETRIES, last_error))
+                    if index in completed:
+                        continue
+                    inflight.setdefault(index, time.monotonic())
 
+                begin, end = bounds(index)
+                try:
+                    data = fetcher.fetch(
+                        begin, end,
+                        lambda: stop.is_set() or index in completed)
+                except _Aborted:
+                    fetcher.close()          # 中途中斷，連線狀態已亂，重建
+                    continue
+                except Exception as exc:
+                    fetcher.close()
+                    with lock:
+                        attempts[index] += 1
+                        tries = attempts[index]
+                        inflight.pop(index, None)
+                        if tries >= CHUNK_MAX_ATTEMPTS:
+                            failures.append(
+                                "分塊 #%d 重試 %d 次仍失敗：%s" % (index, tries, exc))
+                            stop.set()
+                            return
+                    pending.put(index)
+                    continue
+
+                with open(part, "r+b") as fh:
+                    fh.seek(begin)
+                    fh.write(data)
+                with lock:
+                    if index not in completed:
+                        completed.add(index)
+                        landed += len(data)
+                    inflight.pop(index, None)
+        finally:
+            fetcher.close()
+
+    threads = [threading.Thread(target=worker, daemon=True)
+               for _ in range(min(connections, count))]
     _emit(progress, "download", 0, total, started, source_label=label)
-    reported = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=connections) as pool:
-        futures = [pool.submit(fetch, a, b) for a, b in segments]
-        while not all(f.done() for f in futures):
-            time.sleep(0.4)
-            with lock:
-                current = done
-            # 重試會讓計數往回跳，但對外的進度必須單調
-            reported = max(reported, current)
-            _emit(progress, "download", reported, total, started,
-                  source_label=label)
-        for f in futures:
-            f.result()               # 有例外就在這裡拋出
+    for t in threads:
+        t.start()
+
+    # 速度用最近 3 秒的滑動視窗算，避免尾端忽快忽慢
+    window = collections.deque()
+    while any(t.is_alive() for t in threads):
+        time.sleep(0.4)
+        now = time.monotonic()
+        with lock:
+            current = landed
+        window.append((now, current))
+        while len(window) > 1 and now - window[0][0] > 3.0:
+            window.popleft()
+        if len(window) >= 2 and window[-1][0] > window[0][0]:
+            speed = (window[-1][1] - window[0][1]) / (window[-1][0] - window[0][0])
+        else:
+            speed = current / max(1e-6, now - started)
+        eta = ((total - current) / speed) if speed > 0 else 0
+        _emit(progress, "download", current, total, started,
+              source_label=label, speed_bps=max(0.0, speed), eta_s=max(0.0, eta))
+
+    for t in threads:
+        t.join(timeout=5)
+
+    if failures:
+        raise IOError(failures[0])
+    if len(completed) != count:
+        raise IOError("只完成 %d/%d 個分塊" % (len(completed), count))
 
     _emit(progress, "download", total, total, started, source_label=label)
     return total
