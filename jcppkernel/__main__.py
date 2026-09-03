@@ -1,13 +1,100 @@
 from ipykernel.kernelbase import Kernel
 from os import path, close as fsclose, name as ostype
 from tempfile import mkstemp
+from uuid import uuid4
+import html as html_mod
 import subprocess
 
 from .realtime_subprocess import RealTimeSubprocess
 from .code_processing import CPPCodeProcessingUnit
 from .temp_file_processing import CPPTempFileProcessing
 from .python_quiz_cells import is_quiz_cell, QuizPythonRuntime
-from .toolchain import find_toolchain, ensure_toolchain, subprocess_env, ToolchainError
+from .toolchain import (
+    find_toolchain, ensure_toolchain, subprocess_env, ToolchainError,
+    format_progress, GCC_VERSION_SHORT,
+)
+
+
+class ToolchainProgressView:
+    """在 notebook 裡用一個會原地更新的 <progress> 條顯示下載進度。
+
+    第一次送 display_data 並帶上 display_id，之後都送 update_display_data
+    更新同一個 display_id —— JupyterLab 4 原生支援，不需要 ipywidgets。
+    """
+
+    def __init__(self, kernel):
+        self._kernel = kernel
+        self._display_id = "jcpp-toolchain-" + uuid4().hex[:12]
+        self._opened = False
+
+    def __call__(self, event):
+        self._render(self._html(event), format_progress(event).rstrip())
+
+    def finish(self, message):
+        self._render(self._box("\u2713 " + message, "#0b7285"), "\u2713 " + message)
+
+    def fail(self, message):
+        self._render(self._box("\u2717 " + message, "#c92a2a"), "\u2717 " + message)
+
+    def _render(self, html, text):
+        self._kernel._publish_display(
+            {"text/html": html, "text/plain": text},
+            self._display_id, update=self._opened,
+        )
+        self._opened = True
+
+    @staticmethod
+    def _box(text, color):
+        return ("<div style=\"font-family:var(--jp-code-font-family,monospace);color:%s\">%s</div>" % (color, html_mod.escape(text)))
+
+    def _html(self, event):
+        phase = event.get("phase", "")
+        if phase == "download":
+            total = event.get("total_bytes") or 1
+            done = event.get("done_bytes") or 0
+            pct = int(done * 100 / total)
+            head = "GCC %s \u4e0b\u8f09\u4e2d" % GCC_VERSION_SHORT
+            detail = ("%d%% \u00b7 %.1f/%.1f MB \u00b7 %.1f MB/s \u00b7 \u5269\u9918 %s"
+                      % (pct, done / 1048576.0, total / 1048576.0,
+                         (event.get("speed_bps") or 0) / 1048576.0,
+                         self._clock(event.get("eta_s"))))
+        elif phase == "extract":
+            total = event.get("total_items") or 1
+            done = event.get("done_items") or 0
+            pct = int(done * 100 / total)
+            head = "GCC %s \u89e3\u58d3\u4e2d" % GCC_VERSION_SHORT
+            detail = "%d%% \u00b7 %d/%d \u6a94" % (pct, done, total)
+        elif phase == "wait":
+            pct = None
+            head = "\u53e6\u4e00\u500b kernel \u6b63\u5728\u4e0b\u8f09\uff0c\u7b49\u5f85\u4e2d\u2026"
+            detail = "\u5df2\u7b49 %s" % self._clock(event.get("elapsed_s"))
+        else:
+            pct = None
+            head = event.get("message") or ""
+            detail = ""
+
+        bar = (
+            "<progress value=\"%d\" max=\"100\" style=\"width:100%%;height:1.1em\"></progress>"
+            % pct if pct is not None else
+            "<progress style=\"width:100%;height:1.1em\"></progress>"
+        )
+        return (
+            "<div style=\"font-family:var(--jp-ui-font-family,sans-serif);max-width:44em\">"
+            "<div style=\"margin-bottom:.25em\">%s</div>%s"
+            "<div style=\"font-family:var(--jp-code-font-family,monospace);font-size:90%%;opacity:.8;margin-top:.2em\">%s</div></div>"
+            % (html_mod.escape(head), bar, html_mod.escape(detail))
+        )
+
+    @staticmethod
+    def _clock(seconds):
+        try:
+            seconds = int(seconds)
+        except (TypeError, ValueError):
+            return "--:--"
+        if seconds <= 0 or seconds > 359999:
+            return "--:--"
+        minutes, sec = divmod(seconds, 60)
+        return "%d:%02d" % (minutes, sec)
 
 class CPPKernel(Kernel):
     implementation = "jupyter_cpp_kernel"
@@ -100,18 +187,20 @@ class CPPKernel(Kernel):
             return True
 
         if not self.toolchain:
+            view = ToolchainProgressView(self)
             try:
-                self.toolchain = ensure_toolchain(
-                    progress=lambda msg: self._write_to_stderr("[C++ kernel] " + msg + "\n")
-                )
+                self.toolchain = ensure_toolchain(progress=view)
             except ToolchainError as exc:
+                view.fail(str(exc).splitlines()[0])
                 self._write_to_stderr("\n[C++ kernel] " + str(exc) + "\n" + self._TOOLCHAIN_HELP)
                 return False
             except Exception as exc:   # 網路等意外，kernel 不該掛掉
+                view.fail("下載編譯器時發生非預期錯誤：%r" % (exc,))
                 self._write_to_stderr(
                     "\n[C++ kernel] 下載編譯器時發生非預期錯誤：%r\n" % (exc,) + self._TOOLCHAIN_HELP
                 )
                 return False
+            view.finish("GCC %s 已安裝到 %s" % (GCC_VERSION_SHORT, self.toolchain.gxx))
 
         if not self._build_master():
             self._write_to_stderr(
@@ -152,6 +241,14 @@ class CPPKernel(Kernel):
     def _publish_display_data(self, bundle):
         self.send_response(
             self.iopub_socket, "display_data", {"data": bundle, "metadata": {}}
+        )
+
+    def _publish_display(self, bundle, display_id, update=False):
+        """帶 display_id 的輸出；update=True 就地更新同一塊，用來做進度條。"""
+        self.send_response(
+            self.iopub_socket,
+            "update_display_data" if update else "display_data",
+            {"data": bundle, "metadata": {}, "transient": {"display_id": display_id}},
         )
 
     def _write_to_stderr(self, contents):

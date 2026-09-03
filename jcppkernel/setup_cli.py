@@ -96,26 +96,28 @@ def main(argv=None):
     print("2) C++ 編譯器")
     from .toolchain import (
         find_toolchain, ensure_toolchain, ToolchainError, managed_root, subprocess_env,
+        TerminalProgress,
     )
     import subprocess
 
     tc = find_toolchain()
     if tc is None and managed_root():
+        reporter = TerminalProgress()
         try:
-            tc = ensure_toolchain(progress=lambda s: print("  " + s))
+            tc = ensure_toolchain(progress=reporter)
         except ToolchainError as exc:
+            reporter.close()
             print("  取得編譯器失敗：%s" % exc, file=sys.stderr)
             tc = None
+        else:
+            reporter.close()
 
     print()
     print("=== 完成 ===")
     print("kernelspec：%s" % os.path.dirname(installed[0][1]))
     if tc:
-        print("g++       ：%s（%s）" % (tc.gxx, {
-            "JCPP_GXX": "JCPP_GXX 環境變數",
-            "PATH": "系統上的現成安裝",
-            "managed": "kernel 自行下載",
-        }[tc.source]))
+        from .toolchain import _SOURCE_LABELS
+        print("g++       ：%s（%s）" % (tc.gxx, _SOURCE_LABELS.get(tc.source, tc.source)))
         try:
             out = subprocess.run([tc.gxx, "--version"], capture_output=True, text=True,
                                  timeout=60, env=subprocess_env(tc.bin_dir))
