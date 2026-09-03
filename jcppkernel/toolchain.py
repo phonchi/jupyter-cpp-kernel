@@ -33,24 +33,47 @@ import unicodedata
 import zipfile
 
 # winlibs GitHub release 是唯一官方來源。tag 與檔名寫死，確保每台機器拿到同一份。
-GITHUB_ZIP_URL = (
+# 課程精簡版：用 tools/build_trimmed_toolchain.py 把 winlibs 原版瘦身成一半大小
+# （拿掉 Fortran／Objective-C／libgccjit／文件，保留全部 DLL、lib/gcc、
+# x86_64-w64-mingw32 與 gdb），放在本 fork 自己的 GitHub Release。
+TRIMMED_ZIP_URL = (
+    "https://github.com/phonchi/jupyter-cpp-kernel/releases/download/"
+    "toolchain-12.1.0-ucrt-r3-nsysu1/"
+    "mingw64-gcc-12.1.0-ucrt-r3-nsysu.zip"
+)
+
+# winlibs 官方原版（上游唯一官方來源），精簡版拿不到時的退路。
+WINLIBS_ZIP_URL = (
     "https://github.com/brechtsanders/winlibs_mingw/releases/download/"
     "12.1.0-14.0.6-10.0.0-ucrt-r3/"
     "winlibs-x86_64-posix-seh-gcc-12.1.0-mingw-w64ucrt-10.0.0-r3.zip"
 )
-DEFAULT_ZIP_URL = GITHUB_ZIP_URL      # 舊名保留
+GITHUB_ZIP_URL = WINLIBS_ZIP_URL      # 舊名保留
+DEFAULT_ZIP_URL = WINLIBS_ZIP_URL     # 舊名保留
 
-# 依序嘗試；HEAD 失敗或大小不符就換下一個。
-# TODO: 校內網對 GitHub 只有 < 1 MB/s，之後在最前面補上 Cloudflare R2 的公開 URL。
-TOOLCHAIN_URLS = [
-    GITHUB_ZIP_URL,
+# 依序嘗試；HEAD 大小不符或 sha256 不符就換下一個。
+# 每個來源自帶 size／sha256 —— 精簡版與原版內容不同，摘要當然也不同。
+TOOLCHAIN_SOURCES = [
+    {
+        "url": TRIMMED_ZIP_URL,
+        "size": 100474179,
+        "sha256": "aeec29c2220f1a2330eb47d9c954e48207ecb80151c1721394d9ff5977e3d7a6",
+        "label": "課程精簡版 100 MB",
+    },
+    {
+        "url": WINLIBS_ZIP_URL,
+        "size": 208612121,
+        "sha256": "6b957b84f5432b500b72999e47082e1728acecd6733a15e5120a498c6c8a3aaa",
+        "label": "winlibs 原版 198 MB",
+    },
 ]
 
 # 分段下載的連線數。校內網單連線太慢，多開幾條可以把頻寬吃滿。
 DEFAULT_CONNECTIONS = 8
 MAX_CONNECTIONS = 16
 SEGMENT_RETRIES = 3
-ZIP_NAME = "winlibs-x86_64-posix-seh-gcc-12.1.0-mingw-w64ucrt-10.0.0-r3.zip"
+ZIP_NAME = "mingw64-gcc-12.1.0-ucrt-r3.zip"   # 下載後暫存的檔名（與來源無關）
+# 舊名保留：指向 winlibs 原版的大小與摘要。實際校驗一律用該來源自己的 size/sha256。
 ZIP_SIZE = 208612121
 # 2026-09-02 從上述 URL 下載一次後算出並釘死（GitHub release 沒有提供官方 digest）。
 ZIP_SHA256 = "6b957b84f5432b500b72999e47082e1728acecd6733a15e5120a498c6c8a3aaa"
@@ -80,7 +103,7 @@ LOCK_NOTICE_SECONDS = 15
 # notebook 則畫成 <progress> 元件。
 
 BAR_WIDTH = 20
-LINE_WIDTH = 86          # 固定欄寬，讓終端機用 \r 原地更新時不會留下殘影
+LINE_WIDTH = 96          # 固定欄寬，讓終端機用 \r 原地更新時不會留下殘影
                          # （所有 phase 都補到同寬，跨階段切換也不留殘影）
 
 
@@ -92,6 +115,21 @@ def _display_width(text):
 
 def _pad(text, width=LINE_WIDTH):
     return text + " " * max(0, width - _display_width(text))
+
+
+HEAD_WIDTH = 26          # 標題欄固定寬度，讓不同來源／階段的數字欄對齊
+
+
+def _head(text):
+    """標題補到固定顯示寬度；太長就截掉，保證後面各欄永遠對齊。"""
+    if _display_width(text) > HEAD_WIDTH:
+        out = ""
+        for ch in text:
+            if _display_width(out + ch) > HEAD_WIDTH:
+                break
+            out += ch
+        text = out
+    return text + " " * (HEAD_WIDTH - _display_width(text))
 
 
 def _bar(frac):
@@ -119,12 +157,14 @@ def format_progress(event):
     phase = event.get("phase", "")
     message = event.get("message") or ""
 
+    label = event.get("source_label") or ("GCC %s" % GCC_VERSION_SHORT)
+
     if phase == "download":
         total = event.get("total_bytes") or ZIP_SIZE
         done = event.get("done_bytes") or 0
         frac = (done / total) if total else 0.0
-        line = ("GCC %s \u4e0b\u8f09\u4e2d %3d%%  %s  %5.1f/%5.1f MB  %5.1f MB/s  \u5269\u9918 %-7s"
-                % (GCC_VERSION_SHORT, int(frac * 100), _bar(frac),
+        line = ("%s %3d%%  %s  %5.1f/%5.1f MB  %5.1f MB/s  \u5269\u9918 %-7s"
+                % (_head(label + " \u4e0b\u8f09\u4e2d"), int(frac * 100), _bar(frac),
                    done / 1048576.0, total / 1048576.0,
                    (event.get("speed_bps") or 0) / 1048576.0,
                    _fmt_clock(event.get("eta_s"))))
@@ -132,14 +172,18 @@ def format_progress(event):
         total = event.get("total_items") or 0
         done = event.get("done_items") or 0
         frac = (done / total) if total else 0.0
-        line = ("GCC %s \u89e3\u58d3\u4e2d %3d%%  %s  %5d/%5d \u6a94  \u5df2\u7528 %-7s"
-                % (GCC_VERSION_SHORT, int(frac * 100), _bar(frac), done, total,
+        line = ("%s %3d%%  %s  %5d/%5d \u6a94  \u5df2\u7528 %-7s"
+                % (_head("GCC %s \u89e3\u58d3\u4e2d" % GCC_VERSION_SHORT),
+                   int(frac * 100), _bar(frac), done, total,
                    _fmt_clock(event.get("elapsed_s"))))
     elif phase == "verify":
-        line = "GCC %s \u6821\u9a57\u4e2d       %s" % (GCC_VERSION_SHORT, message or "\u6bd4\u5c0d sha256\u2026")
+        line = "%s      %s" % (_head("GCC %s \u6821\u9a57\u4e2d" % GCC_VERSION_SHORT),
+                               message or "\u6bd4\u5c0d sha256\u2026")
     elif phase == "wait":
-        line = "\u7b49\u5f85\u5176\u4ed6 kernel      %s\uff08\u5df2\u7b49 %s\uff09" % (
-            message or "\u53e6\u4e00\u500b kernel \u6b63\u5728\u4e0b\u8f09", _fmt_clock(event.get("elapsed_s")))
+        line = "%s %s\uff08\u5df2\u7b49 %s\uff09" % (
+            _head("\u7b49\u5f85\u5176\u4ed6 kernel"),
+            message or "\u53e6\u4e00\u500b kernel \u6b63\u5728\u4e0b\u8f09",
+            _fmt_clock(event.get("elapsed_s")))
     else:
         line = message
 
@@ -241,15 +285,34 @@ class Toolchain:
 
 def zip_url():
     """第一順位的下載網址（保留舊介面）。"""
-    return zip_urls()[0]
+    return zip_sources()[0]["url"]
 
 
 def zip_urls():
-    """要依序嘗試的下載來源。JCPP_TOOLCHAIN_URL 可覆寫成單一 URL。"""
+    """要依序嘗試的下載網址（保留舊介面）。"""
+    return [src["url"] for src in zip_sources()]
+
+
+def zip_sources():
+    """要依序嘗試的下載來源，每個是 {url, size, sha256, label}。
+
+    JCPP_TOOLCHAIN_URL 可覆寫成單一來源（老師指向校內鏡像用）；
+    沒有一併給 JCPP_TOOLCHAIN_SHA256 的話就只驗大小，並印警告。
+    """
     override = os.environ.get("JCPP_TOOLCHAIN_URL")
-    if override:
-        return [override]
-    return list(TOOLCHAIN_URLS)
+    if not override:
+        return [dict(src) for src in TOOLCHAIN_SOURCES]
+
+    sha = os.environ.get("JCPP_TOOLCHAIN_SHA256") or None
+    try:
+        size = int(os.environ.get("JCPP_TOOLCHAIN_SIZE") or 0)
+    except ValueError:
+        size = 0
+    if not sha:
+        sys.stderr.write(
+            "[jcppkernel] 警告：JCPP_TOOLCHAIN_URL 沒有搭配 JCPP_TOOLCHAIN_SHA256，"
+            "將只檢查檔案大小，不驗證內容摘要。\n")
+    return [{"url": override, "size": size, "sha256": sha, "label": "自訂來源"}]
 
 
 def _connection_count():
@@ -528,7 +591,7 @@ def _range_ok(url):
         return False
 
 
-def _download_single(url, part, progress, started):
+def _download_single(url, part, progress, started, label=""):
     """單連線下載，也是分段下載失敗時的退路。"""
     import urllib.request
 
@@ -537,7 +600,7 @@ def _download_single(url, part, progress, started):
     last_pct = -1
     with urllib.request.urlopen(url, timeout=120) as resp:
         total = int(resp.headers.get("Content-Length") or ZIP_SIZE)
-        _emit(progress, "download", 0, total, started)
+        _emit(progress, "download", 0, total, started, source_label=label)
         with open(part, "wb") as fh:
             while True:
                 chunk = resp.read(1024 * 256)
@@ -549,12 +612,13 @@ def _download_single(url, part, progress, started):
                 pct = int(written * 100 / total) if total else 0
                 if now - last_report >= 0.5 or pct > last_pct:
                     last_report, last_pct = now, pct
-                    _emit(progress, "download", written, total, started)
-    _emit(progress, "download", written, total, started)
+                    _emit(progress, "download", written, total, started,
+                          source_label=label)
+    _emit(progress, "download", written, total, started, source_label=label)
     return written
 
 
-def _download_segmented(url, part, total, connections, progress, started):
+def _download_segmented(url, part, total, connections, progress, started, label=""):
     """把檔案切成等份，多條連線各抓一段寫進同一個檔的對應 offset。
 
     每個執行緒自己 open 一個 handle 用 seek+write，不共用 file object。
@@ -611,7 +675,7 @@ def _download_segmented(url, part, total, connections, progress, started):
         raise IOError("分段 %d-%d 重試 %d 次仍失敗：%s"
                       % (begin, finish, SEGMENT_RETRIES, last_error))
 
-    _emit(progress, "download", 0, total, started)
+    _emit(progress, "download", 0, total, started, source_label=label)
     reported = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=connections) as pool:
         futures = [pool.submit(fetch, a, b) for a, b in segments]
@@ -621,11 +685,12 @@ def _download_segmented(url, part, total, connections, progress, started):
                 current = done
             # 重試會讓計數往回跳，但對外的進度必須單調
             reported = max(reported, current)
-            _emit(progress, "download", reported, total, started)
+            _emit(progress, "download", reported, total, started,
+                  source_label=label)
         for f in futures:
             f.result()               # 有例外就在這裡拋出
 
-    _emit(progress, "download", total, total, started)
+    _emit(progress, "download", total, total, started, source_label=label)
     return total
 
 
@@ -637,45 +702,58 @@ def _sha256_file(path):
     return sha.hexdigest()
 
 
-def _download(url, dest, progress):
-    """從單一 URL 下載並校驗。大小不符或 HEAD 失敗會拋例外，由呼叫端換下一個來源。"""
+def _download(source, dest, progress):
+    """從單一來源下載並校驗。
+
+    source 是 {url, size, sha256, label}。大小或摘要不符會拋例外，
+    由 _download_with_mirrors 換下一個來源。
+    """
+    url = source["url"]
+    label = source.get("label") or "工具鏈"
+    expect_size = source.get("size") or 0
+    expect_sha = source.get("sha256")
+
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     part = dest + ".part"
     started = time.monotonic()
     connections = _connection_count()
 
     total, accepts, final_url = _probe(url)
-    if total and total != ZIP_SIZE:
+    if expect_size and total and total != expect_size:
         raise ToolchainError(
-            "來源檔案大小不對（%d bytes，預期 %d），換下一個來源。" % (total, ZIP_SIZE))
+            "來源檔案大小不對（%d bytes，預期 %d），換下一個來源。"
+            % (total, expect_size))
+    if not expect_size:
+        expect_size = total          # 自訂來源沒給 size 就以 HEAD 為準
 
     segmented = False
     if connections > 1 and total and accepts and _range_ok(final_url):
         try:
-            _download_segmented(final_url, part, total, connections, progress, started)
+            _download_segmented(final_url, part, total, connections, progress,
+                                started, label)
             segmented = True
         except Exception as exc:
             _emit(progress, "info",
                   message="分段下載失敗（%s），改用單連線重試。" % exc)
     if not segmented:
-        _download_single(final_url, part, progress, started)
-
-    _emit(progress, "verify", os.path.getsize(part), total or ZIP_SIZE, started,
-          message="比對檔案大小與 sha256…")
+        _download_single(final_url, part, progress, started, label)
 
     written = os.path.getsize(part)
-    if written != ZIP_SIZE:
+    _emit(progress, "verify", written, expect_size or written, started,
+          source_label=label, message="比對檔案大小與 sha256…")
+
+    if expect_size and written != expect_size:
         os.remove(part)
         raise ToolchainError(
             "下載的檔案大小不對（拿到 %d bytes，預期 %d）。"
-            "可能是網路中斷或被代理伺服器攔截，請重試。" % (written, ZIP_SIZE)
+            "可能是網路中斷或被代理伺服器攔截，請重試。" % (written, expect_size)
         )
     digest = _sha256_file(part)
-    if ZIP_SHA256 and not ZIP_SHA256.startswith("__") and digest != ZIP_SHA256:
+    if expect_sha and digest != expect_sha:
         os.remove(part)
         raise ToolchainError(
             "下載的檔案 sha256 不符（拿到 %s，預期 %s）。"
-            "請重試；若持續失敗請改用手動安裝。" % (digest, ZIP_SHA256)
+            "請重試；若持續失敗請改用手動安裝。" % (digest, expect_sha)
         )
     os.replace(part, dest)
     return digest
@@ -684,14 +762,16 @@ def _download(url, dest, progress):
 def _download_with_mirrors(dest, progress):
     """依序嘗試每個來源，全部失敗才放棄。"""
     failures = []
-    urls = zip_urls()
-    for index, url in enumerate(urls, 1):
+    sources = zip_sources()
+    for index, source in enumerate(sources, 1):
         if index > 1:
-            _emit(progress, "info", message="換下一個下載來源（第 %d 個）…" % index)
+            _emit(progress, "info",
+                  message="換下一個下載來源：%s" % (source.get("label") or source["url"]))
         try:
-            return _download(url, dest, progress)
+            return _download(source, dest, progress)
         except Exception as exc:
-            failures.append("  %s\n    -> %s" % (url, exc))
+            failures.append("  %s（%s）\n    -> %s"
+                            % (source["url"], source.get("label") or "", exc))
     raise ToolchainError("所有下載來源都失敗：\n" + "\n".join(failures))
 
 
@@ -739,7 +819,8 @@ def _download_and_extract(root, progress):
     """實際的下載→校驗→解壓→原子改名。呼叫端必須已經持有鎖。"""
     zip_path = os.path.join(root, "download", ZIP_NAME)
 
-    if os.path.isfile(zip_path) and os.path.getsize(zip_path) == ZIP_SIZE:
+    known_sizes = {src.get("size") for src in zip_sources() if src.get("size")}
+    if os.path.isfile(zip_path) and os.path.getsize(zip_path) in known_sizes:
         _emit(progress, "info", message="已有下載好的壓縮檔，跳過下載。")
     else:
         _emit(progress, "info",

@@ -53,7 +53,8 @@ class ToolchainProgressView:
             total = event.get("total_bytes") or 1
             done = event.get("done_bytes") or 0
             pct = int(done * 100 / total)
-            head = "GCC %s \u4e0b\u8f09\u4e2d" % GCC_VERSION_SHORT
+            head = "%s \u4e0b\u8f09\u4e2d" % (event.get("source_label")
+                                          or "GCC %s" % GCC_VERSION_SHORT)
             detail = ("%d%% \u00b7 %.1f/%.1f MB \u00b7 %.1f MB/s \u00b7 \u5269\u9918 %s"
                       % (pct, done / 1048576.0, total / 1048576.0,
                          (event.get("speed_bps") or 0) / 1048576.0,
