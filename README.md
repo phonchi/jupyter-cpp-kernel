@@ -45,6 +45,30 @@ pip install jupyter-cpp-kernel
 pip install git+https://github.com/shiroinekotfs/jupyter-cpp-kernel.git
 ```
 
+## 課程 ArrayList 更新（NSYSU MATH208 fork）
+
+`1.0.0a9.post1` 同步第三章使用的 `ArrayList`，提供 `push_back()`、
+`capacity()`、const 索引及深層複製。內建標頭取自
+[pythonds3 的 3b4a200](https://github.com/phonchi/pythonds3/blob/3b4a20038b327e424b1f21f07ea42b8d6cee3f2c/cppds/arraylist.hpp)。
+
+已安裝課程版的使用者，請在啟動 Jupyter 的同一個 Python 環境執行：
+
+```shell
+python -m pip install --upgrade --no-cache-dir https://github.com/phonchi/jupyter-cpp-kernel/archive/refs/heads/nsysu-math208.zip
+python -m jcppkernel.setup_cli
+```
+
+更新後重啟 C++ kernel。若 notebook 所在目錄另有 `pythonds3/`，編譯器會優先
+使用那裡的標頭，也須確認該副本已更新。
+
+維護者可用以下命令檢查第三章原始範例；需要 Python 與 g++：
+
+```shell
+python tools/check_arraylist.py
+# 檢查安裝包內的標頭時，指定 jcppkernel/resources 的實際位置：
+python tools/check_arraylist.py --include-root /path/to/jcppkernel/resources
+```
+
 ## 工具鏈來源與重建方式（NSYSU MATH208 fork）
 
 Windows 上如果找不到 g++（`JCPP_GXX` → PATH → 常見安裝位置 → 使用者登錄檔 PATH
