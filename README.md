@@ -45,6 +45,17 @@ pip install jupyter-cpp-kernel
 pip install git+https://github.com/shiroinekotfs/jupyter-cpp-kernel.git
 ```
 
+## 課程標頭更新：OrderedList 與 SparseMatrix（1.0.0a9.post2）
+
+`1.0.0a9.post2` 同步第四章講義：
+
+- `OrderedList::add()` 改用 `previous`／`current` 兩個指標走訪，找到第一個大於
+  新值的節點後插入，與講義的圖和說明一致。
+- `SparseMatrix` 補上 `nnz()`、`sparsity(rows, cols)` 與 `==`／`!=`。
+
+更新方式同下方 ArrayList 一節（`pip install --upgrade` 後執行
+`python -m jcppkernel.setup_cli`，再重啟 kernel）。
+
 ## 課程 ArrayList 更新（NSYSU MATH208 fork）
 
 `1.0.0a9.post1` 同步第三章使用的 `ArrayList`，提供 `push_back()`、
