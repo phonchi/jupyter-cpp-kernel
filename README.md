@@ -45,6 +45,16 @@ pip install jupyter-cpp-kernel
 pip install git+https://github.com/shiroinekotfs/jupyter-cpp-kernel.git
 ```
 
+## 課程標頭更新：BinaryHeap 與 PriorityQueue（1.0.0a9.post3）
+
+`1.0.0a9.post3` 同步第八、九章與作業使用的 `binaryheap.hpp`：
+
+- `BinaryHeap` 改成 `template <typename T = int>`，原本的 `BinaryHeap heap;` 寫法照常是 `int` 堆積。
+- 新增 `PriorityQueue<K>`：`insert(priority, item)`、`delMin()`（回傳 `(priority, item)`）、
+  `findMin()`、`isEmpty()`、`size()`、`changePriority(item, p)`、`contains(item)`。
+
+更新方式同下方 ArrayList 一節。
+
 ## 課程標頭更新：OrderedList 與 SparseMatrix（1.0.0a9.post2）
 
 `1.0.0a9.post2` 同步第四章講義：
