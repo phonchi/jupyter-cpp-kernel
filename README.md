@@ -45,6 +45,39 @@ pip install jupyter-cpp-kernel
 pip install git+https://github.com/shiroinekotfs/jupyter-cpp-kernel.git
 ```
 
+## 在 notebook 執行迷宮 GUI（Windows）
+
+在電腦教室或自己的 Windows 筆電，於啟動 Jupyter 的 Python 環境安裝課程版：
+
+```shell
+pip install notebook jupyterquiz jupytercards
+pip install --user --upgrade https://github.com/phonchi/jupyter-cpp-kernel/archive/refs/heads/nsysu-math208.zip
+python -m jcppkernel.setup_cli
+```
+
+教室已裝好 Jupyter 時，第一行只需安裝 `jupyterquiz jupytercards`。
+更新後重啟 Jupyter，下載第六章 notebook，選擇 **C++ 17** kernel。
+GUI 標頭與範例迷宮隨課程版套件安裝，不必另外下載 DLL 或手動編譯圖形函式庫。
+
+```cpp
+#include "pythonds3/cppds/maze.hpp"
+
+int main() {
+    Maze maze("maze2.txt", true);
+    searchFrom(maze, maze.startRow, maze.startCol);
+    maze.print();
+    maze.waitForClose();
+}
+```
+
+`true` 會開啟桌面迷宮視窗；關閉視窗後，儲存格才結束。
+改成 `false` 可只看文字結果。自己的 `maze2.txt` 放在 notebook 同一個資料夾時，
+會優先使用該檔案；沒有時使用套件內的範例。
+
+Linux／WSL 的 GUI 需要可用的桌面顯示與 X11 開發檔案；kernel 會優先使用目前
+Python 環境內的 X11，再找系統安裝。沒有這些檔案時仍可執行文字模式，
+kernel 不會自動安裝系統套件。遠端 kernel 的桌面視窗不會嵌入瀏覽器。
+
 ## 課程標頭更新：BinaryHeap 與 PriorityQueue（1.0.0a9.post3）
 
 `1.0.0a9.post3` 同步第八、九章與作業使用的 `binaryheap.hpp`：

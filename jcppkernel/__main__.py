@@ -9,6 +9,7 @@ from .realtime_subprocess import RealTimeSubprocess
 from .code_processing import CPPCodeProcessingUnit
 from .temp_file_processing import CPPTempFileProcessing
 from .python_quiz_cells import is_quiz_cell, QuizPythonRuntime
+from .gui_support import gui_compile_flags
 from .toolchain import (
     find_toolchain, ensure_toolchain, subprocess_env, ToolchainError,
     format_progress, GCC_VERSION_SHORT,
@@ -118,7 +119,7 @@ class CPPKernel(Kernel):
     ]
     language_info = {
         "name": "C++",
-        "version": "1.0.0a9.post3",
+        "version": "1.0.0a9.post4",
         "mimetype": "text/markdown",
         "file_extension": ".cpp",
     }
@@ -214,7 +215,7 @@ class CPPKernel(Kernel):
     @property
     def banner(self):
         return (
-            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post3\n\n"
+            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post4\n\n"
             "Copyright (C) Brendan Rius\n"
             "Copyright (C) Shiroi Neko\n"
             "Copyright (C) Vo Luu Tuong Anh\n\n"
@@ -268,6 +269,8 @@ class CPPKernel(Kernel):
         )
 
     def _compile_with_gpp(self, source_filename, binary_filename):
+        with open(source_filename, encoding="utf-8") as source:
+            gui_flags = gui_compile_flags(source.read())
         return self._create_jupyter_subprocess(
             [
                 self.toolchain.gxx,
@@ -291,6 +294,7 @@ class CPPKernel(Kernel):
                 "-lm",
                 "-Wall",
                 "-DBUFFERED_OUTPUT",
+                *gui_flags,
                 "-o",
                 binary_filename,
             ]
