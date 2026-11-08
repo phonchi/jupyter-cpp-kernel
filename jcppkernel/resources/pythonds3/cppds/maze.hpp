@@ -59,6 +59,11 @@ class Maze {
             mazeList[row][col] = val;
             if (gui) gui->update(row, col, val);
         }
+        // GUI turtle shape: "snorlax" (default), "pikachu", "turtle", "arrow", ...
+        // Text-only mode ignores it.
+        void setShape(const string& name) {
+            if (gui) gui->setShape(name);
+        }
         // Zero means wait for the user to close the window.
         void waitForClose(unsigned timeoutMilliseconds = 0) {
             if (gui) gui->wait(timeoutMilliseconds);

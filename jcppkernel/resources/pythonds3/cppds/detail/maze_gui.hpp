@@ -30,6 +30,7 @@
 #pragma pop_macro("fflush")
 #pragma pop_macro("putchar")
 #pragma pop_macro("printf")
+#include "maze_sprites.hpp"
 #include <chrono>
 #include <thread>
 
@@ -60,6 +61,10 @@ public:
         screen.update(true, false);
         screen.tracer(10, 10);
         turtle.speed(ct::TS_SLOW);
+        maze_sprites::setShape(turtle, "snorlax");  // like the Python HW3 maze
+    }
+    void setShape(const std::string& name) {
+        maze_sprites::setShape(turtle, name);
     }
     void update(int row, int col, char value) {
         if (screen.isclosed()) return;
@@ -102,6 +107,7 @@ public:
             "Use Maze(filename, false) for text-only execution.");
     }
     void update(int, int, char) {}
+    void setShape(const std::string&) {}
     void wait(unsigned) {}
     void save(const std::string&) {}
 };
