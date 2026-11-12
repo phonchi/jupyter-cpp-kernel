@@ -119,7 +119,7 @@ class CPPKernel(Kernel):
     ]
     language_info = {
         "name": "C++",
-        "version": "1.0.0a9.post5",
+        "version": "1.0.0a9.post6",
         "mimetype": "text/markdown",
         "file_extension": ".cpp",
     }
@@ -215,7 +215,7 @@ class CPPKernel(Kernel):
     @property
     def banner(self):
         return (
-            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post5\n\n"
+            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post6\n\n"
             "Copyright (C) Brendan Rius\n"
             "Copyright (C) Shiroi Neko\n"
             "Copyright (C) Vo Luu Tuong Anh\n\n"
