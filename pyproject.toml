@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jupyter-cpp-kernel"
-version = "1.0.0a9.post7"
+version = "1.0.0a9.post8"
 description = "C++ kernel for Jupyter. Easily adopt and deploy for testing environment."
 authors = ["Shiroi Neko <shiroineko.tfs@gmail.com>"]
 
