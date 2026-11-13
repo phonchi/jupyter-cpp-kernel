@@ -7,3 +7,4 @@ include jcppkernel/resources/cppio/cppin.hpp
 include jcppkernel/resources/gcpph.hpp
 include README.md LICENSE SECURITY.md
 recursive-include jcppkernel/resources/pythonds3 *.hpp *.h *.txt
+recursive-include jcppkernel/resources/animations *.html *.css *.js

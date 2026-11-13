@@ -1,0 +1,71 @@
+<div class="ds09-anim" id="ds09-heap-extract">
+<h3 style="margin-top:0;color:var(--accent2);">Min-Heap Delete-min — perc_down 動畫</h3>
+<div class="viz-layout">
+<div>
+<div class="viz-panel">
+<div class="tree-canvas" id="canvas-heapExt" style="height:280px;">
+<svg class="edges-layer"></svg>
+<div class="nodes-layer"></div>
+</div>
+<div style="margin-top:.5rem;font-family:'JetBrains Mono',monospace;font-size:.74em;color:var(--muted);">陣列表示（heap[i]）：</div>
+<div class="heap-list" id="heapListExt"></div>
+<div class="status-banner"><span class="status-icon">›</span><span class="status-text" id="heapStatusExt">按「開始」執行 delete-min</span></div>
+<div class="preset-row">
+<button class="preset-btn" data-op="insert">Insert</button>
+<button class="preset-btn active" data-op="delete">Delete-min</button>
+<button class="preset-btn" data-op="heapify">Heapify (建堆積)</button>
+</div>
+<div class="input-row" id="heapInsertRowExt">
+<label>插入 key：</label>
+<input id="heapInsertKeyExt" style="width:80px;" type="number" value="2"/>
+<button class="btn btn-shuffle" id="heapInsertBtnExt">插入</button>
+<span style="font-size:.78em;color:var(--muted);">當前 heap：</span>
+<input id="heapArrInputExt" style="flex:1;min-width:140px;" type="text" value="3, 5, 9, 7, 11, 15, 14"/>
+<button class="btn btn-reset" id="heapApplyArrExt">套用</button>
+</div>
+<div class="controls-bar">
+<button class="btn btn-play" id="heapPlayExt">▶ 開始</button>
+<button class="btn btn-step" id="heapStepExt">→ 單步</button>
+<button class="btn btn-reset" id="heapResetExt">↺ 重置</button>
+<div style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;">
+<span style="font-size:.78em;color:var(--muted);">速度</span>
+<input id="heapSpeedExt" max="2000" min="200" step="100" style="flex:1;accent-color:var(--accent3);" type="range" value="700"/>
+</div>
+</div>
+</div>
+</div>
+<div class="side-panel">
+
+<div class="info-card">
+<div class="ic-title">虛擬碼 <span class="ic-badge" style="background:var(--accent2)">CODE</span></div>
+<div class="pseudo-code" id="heapCodeExt" style="font-size:.74em;">
+<span class="line"><span class="kw">#include</span> &lt;algorithm&gt;</span>
+<span class="line"><span class="kw">#include</span> &lt;stdexcept&gt;</span>
+<span class="line"><span class="kw">#include</span> &lt;vector&gt;</span>
+<span class="line"><span class="kw">class</span> MinHeap {</span>
+<span class="line">    std::vector&lt;<span class="kw">int</span>&gt; heap;</span>
+<span class="line">    <span class="kw">void</span> <span class="fn">percDown</span>(<span class="kw">int</span> i) {</span>
+<span class="line">        <span class="kw">while</span> (<span class="num">2</span> * i + <span class="num">1</span> &lt; <span class="kw">static_cast</span>&lt;<span class="kw">int</span>&gt;(heap.<span class="fn">size</span>())) {</span>
+<span class="line">            <span class="kw">int</span> child = <span class="num">2</span> * i + <span class="num">1</span>;</span>
+<span class="line">            <span class="kw">if</span> (child + <span class="num">1</span> &lt; <span class="kw">static_cast</span>&lt;<span class="kw">int</span>&gt;(heap.<span class="fn">size</span>()) &amp;&amp;</span>
+<span class="line">                heap[child + <span class="num">1</span>] &lt; heap[child]) ++child;</span>
+<span class="line">            <span class="kw">if</span> (heap[i] &lt;= heap[child]) <span class="kw">break</span>;</span>
+<span class="line">            std::<span class="fn">swap</span>(heap[i], heap[child]); i = child;</span>
+<span class="line">        }</span>
+<span class="line">    }</span>
+<span class="line"><span class="kw">public</span>:</span>
+<span class="line" data-l="1"><span class="kw">int</span> <span class="fn">delMin</span>() {</span>
+<span class="line" data-l="2">    <span class="kw">if</span> (heap.<span class="fn">empty</span>()) <span class="kw">throw</span> std::underflow_error(<span class="str">&quot;empty heap&quot;</span>);</span>
+<span class="line" data-l="3">    std::<span class="fn">swap</span>(heap[<span class="num">0</span>], heap.<span class="fn">back</span>()); <span class="kw">int</span> m = heap.<span class="fn">back</span>(); heap.<span class="fn">pop_back</span>();</span>
+<span class="line" data-l="4">    <span class="kw">if</span> (!heap.<span class="fn">empty</span>()) <span class="fn">percDown</span>(<span class="num">0</span>);</span>
+<span class="line" data-l="5">    <span class="kw">return</span> m;</span>
+<span class="line">}</span>
+<span class="line">};</span>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+<div style="display:none" data-ds09-shim="heap_extract"><span id="heapSwapExt"></span><span id="heapCmpExt"></span><span id="heapIdxExt"></span><span id="heapParExt"></span></div>
+<script>(function go(){ if(!window.DS09||!window.DS09.init){setTimeout(go,50);return;} window.DS09.init.heapExtract(); })();</script>

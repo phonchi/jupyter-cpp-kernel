@@ -1,0 +1,77 @@
+<div class="ds09-anim" id="ds09-heap-build">
+<h3 style="margin-top:0;color:var(--accent2);">Heapify — 從未排序陣列建堆積（O(n)）</h3>
+<div class="viz-layout">
+<div>
+<div class="viz-panel">
+<div class="tree-canvas" id="canvas-heapBuild" style="height:280px;">
+<svg class="edges-layer"></svg>
+<div class="nodes-layer"></div>
+</div>
+<div style="margin-top:.5rem;font-family:'JetBrains Mono',monospace;font-size:.74em;color:var(--muted);">陣列表示（heap[i]）：</div>
+<div class="heap-list" id="heapListBuild"></div>
+<div class="status-banner"><span class="status-icon">›</span><span class="status-text" id="heapStatusBuild">陣列當作未排序輸入,按「開始」做 heapify</span></div>
+<div class="preset-row">
+<button class="preset-btn" data-op="insert">Insert</button>
+<button class="preset-btn" data-op="delete">Delete-min</button>
+<button class="preset-btn active" data-op="heapify">Heapify (建堆積)</button>
+</div>
+<div class="input-row" id="heapInsertRowBuild">
+<label>插入 key：</label>
+<input id="heapInsertKeyBuild" style="width:80px;" type="number" value="2"/>
+<button class="btn btn-shuffle" id="heapInsertBtnBuild">插入</button>
+<span style="font-size:.78em;color:var(--muted);">當前 heap：</span>
+<input id="heapArrInputBuild" style="flex:1;min-width:140px;" type="text" value="9, 5, 3, 7, 11, 1, 14"/>
+<button class="btn btn-reset" id="heapApplyArrBuild">套用</button>
+</div>
+<div class="controls-bar">
+<button class="btn btn-play" id="heapPlayBuild">▶ 開始</button>
+<button class="btn btn-step" id="heapStepBuild">→ 單步</button>
+<button class="btn btn-reset" id="heapResetBuild">↺ 重置</button>
+<div style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;">
+<span style="font-size:.78em;color:var(--muted);">速度</span>
+<input id="heapSpeedBuild" max="2000" min="200" step="100" style="flex:1;accent-color:var(--accent3);" type="range" value="700"/>
+</div>
+</div>
+</div>
+</div>
+<div class="side-panel">
+
+<div class="info-card">
+<div class="ic-title">虛擬碼 <span class="ic-badge" style="background:var(--accent2)">CODE</span></div>
+<div class="pseudo-code" id="heapCodeBuild" style="font-size:.74em;">
+<span class="line"><span class="kw">#include</span> &lt;algorithm&gt;</span>
+<span class="line"><span class="kw">#include</span> &lt;vector&gt;</span>
+<span class="line"><span class="kw">class</span> MinHeap {</span>
+<span class="line">    std::vector&lt;<span class="kw">int</span>&gt; heap;</span>
+<span class="line">    <span class="kw">void</span> <span class="fn">percDown</span>(<span class="kw">int</span> i) {</span>
+<span class="line">        <span class="kw">while</span> (<span class="num">2</span> * i + <span class="num">1</span> &lt; <span class="kw">static_cast</span>&lt;<span class="kw">int</span>&gt;(heap.<span class="fn">size</span>())) {</span>
+<span class="line">            <span class="kw">int</span> child = <span class="num">2</span> * i + <span class="num">1</span>;</span>
+<span class="line">            <span class="kw">if</span> (child + <span class="num">1</span> &lt; <span class="kw">static_cast</span>&lt;<span class="kw">int</span>&gt;(heap.<span class="fn">size</span>()) &amp;&amp;</span>
+<span class="line">                heap[child + <span class="num">1</span>] &lt; heap[child]) ++child;</span>
+<span class="line">            <span class="kw">if</span> (heap[i] &lt;= heap[child]) <span class="kw">break</span>;</span>
+<span class="line">            std::<span class="fn">swap</span>(heap[i], heap[child]); i = child;</span>
+<span class="line">        }</span>
+<span class="line">    }</span>
+<span class="line"><span class="kw">public</span>:</span>
+<span class="line" data-l="1"><span class="kw">void</span> <span class="fn">buildHeap</span>(std::vector&lt;<span class="kw">int</span>&gt; arr) {</span>
+<span class="line" data-l="2">    heap = arr;</span>
+<span class="line" data-l="3">    <span class="kw">int</span> i = <span class="kw">static_cast</span>&lt;<span class="kw">int</span>&gt;(heap.<span class="fn">size</span>()) / <span class="num">2</span> - <span class="num">1</span>;</span>
+<span class="line" data-l="4">    <span class="kw">while</span> (i &gt;= <span class="num">0</span>) {</span>
+<span class="line" data-l="5">        <span class="fn">percDown</span>(i);</span>
+<span class="line" data-l="6">        i--;</span>
+<span class="line">    }</span>
+<span class="line">}</span>
+<span class="line">};</span>
+</div>
+</div>
+<div class="info-card">
+<div class="ic-title">為什麼是 O(n)？</div>
+<div style="font-size:.83em;line-height:1.55;">
+          底層大量節點高度只有 0/1，移動成本極小；頂層節點少但移動多。總和 $\sum \frac{n}{2^{h+1}} \cdot h = O(n)$。
+        </div>
+</div>
+</div>
+</div>
+</div>
+<div style="display:none" data-ds09-shim="heap_build"><span id="heapSwapBuild"></span><span id="heapCmpBuild"></span><span id="heapIdxBuild"></span><span id="heapParBuild"></span></div>
+<script>(function go(){ if(!window.DS09||!window.DS09.init){setTimeout(go,50);return;} window.DS09.init.heapBuild(); })();</script>

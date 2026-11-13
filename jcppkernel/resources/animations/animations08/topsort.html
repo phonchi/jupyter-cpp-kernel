@@ -1,0 +1,27 @@
+<div class="ds08-anim" id="ds08-topsort">
+<h3 style="margin-top:0;color:var(--accent2);">Topological Sort — DFS 後序反轉得到拓撲順序</h3>
+<div class="viz-layout">
+<div>
+<div class="viz-panel">
+<div class="graph-canvas" id="canvas-topsortTop" style="height:240px;"></div>
+<div class="status-banner"><span class="status-icon">›</span><span class="status-text" id="topStatusTop">按「開始」執行 DFS-based 拓撲排序</span></div>
+<div class="slider-row">
+<span style="font-size:.78rem;color:var(--muted);">速度</span>
+<input id="topSpeedTop" max="2000" min="200" step="50" style="flex:1;accent-color:var(--accent3);" type="range" value="900"/>
+</div>
+<div class="controls-bar">
+<button class="btn btn-play" id="topPlayTop">▶ 開始</button>
+<button class="btn btn-step" id="topStepTop">→ 單步</button>
+<button class="btn btn-reset" id="topResetTop">↺ 重置</button>
+</div>
+<div style="margin-top:.7rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;">
+<strong style="color:var(--accent2);">Recursion stack：</strong>
+<span class="ds-display" id="topStackTop"><span class="ds-empty">empty</span></span>
+</div>
+<div class="topsort-result" id="topResultTop"><span class="ts-label">result</span><span style="color:rgba(255,255,255,.4)">（尚無結束的頂點）</span></div>
+<div class="topsort-result" id="topOrderTop" style="margin-top:.35rem;"><span class="ts-label">topo</span><span style="color:rgba(255,255,255,.4)">（DFS 結束後反轉 result）</span></div>
+</div>
+</div>
+</div>
+</div>
+<script>(function go(){ if(!window.DS08||!window.DS08.init){setTimeout(go,50);return;} window.DS08.init.topsort(); })();</script>

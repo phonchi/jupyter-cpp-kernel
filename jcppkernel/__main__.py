@@ -9,6 +9,7 @@ from .realtime_subprocess import RealTimeSubprocess
 from .code_processing import CPPCodeProcessingUnit
 from .temp_file_processing import CPPTempFileProcessing
 from .python_quiz_cells import is_quiz_cell, QuizPythonRuntime
+from . import anim_cells
 from .gui_support import gui_compile_flags
 from .toolchain import (
     find_toolchain, ensure_toolchain, subprocess_env, ToolchainError,
@@ -119,7 +120,7 @@ class CPPKernel(Kernel):
     ]
     language_info = {
         "name": "C++",
-        "version": "1.0.0a9.post6",
+        "version": "1.0.0a9.post7",
         "mimetype": "text/markdown",
         "file_extension": ".cpp",
     }
@@ -215,7 +216,7 @@ class CPPKernel(Kernel):
     @property
     def banner(self):
         return (
-            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post6\n\n"
+            f"C++ kernel (Standard: {self.standard}) for Jupyter (master), version 1.0.0a9.post7\n\n"
             "Copyright (C) Brendan Rius\n"
             "Copyright (C) Shiroi Neko\n"
             "Copyright (C) Vo Luu Tuong Anh\n\n"
@@ -307,6 +308,13 @@ class CPPKernel(Kernel):
         # is_quiz_cell() 是保守白名單，任何不確定的 cell 都會落回下面的 C++ 流程。
         if is_quiz_cell(code):
             reply = self._py_runtime.execute(code, silent)
+            reply["execution_count"] = self.execution_count
+            return reply
+
+        # NSYSU MATH208: ch7–ch9 的動畫 cell（Python）用內附動畫檔重新產生存檔輸出。
+        anim = anim_cells.classify(code)
+        if anim is not None:
+            reply = anim_cells.execute(*anim, silent, self._publish_display_data, self._write_to_stderr)
             reply["execution_count"] = self.execution_count
             return reply
 

@@ -1,0 +1,38 @@
+<div class="ds08-anim" id="ds08-prim">
+<h3 style="margin-top:0;color:var(--accent2);">Prim 最小生成樹 — 用最小邊權連通整張圖</h3>
+<div class="viz-layout">
+<div>
+<div class="viz-panel">
+<div class="graph-canvas" id="canvas-primPrim" style="height:240px;"></div>
+<div class="status-banner"><span class="status-icon">›</span><span class="status-text" id="primStatusPrim">選擇起點，按「開始」逐步建立 MST</span></div>
+<div class="slider-row">
+<span class="slider-label">起點</span>
+<select id="primStartPrim" style="font-family:'JetBrains Mono',monospace;padding:.3rem .5rem;border-radius:6px;border:1px solid var(--card-border);background:#fff;">
+<option selected="" value="A">A</option><option value="B">B</option><option value="C">C</option>
+<option value="D">D</option><option value="E">E</option><option value="F">F</option><option value="G">G</option>
+</select>
+<span style="font-size:.78rem;color:var(--muted);">速度</span>
+<input id="primSpeedPrim" max="2000" min="200" step="50" style="flex:1;accent-color:var(--accent3);" type="range" value="800"/>
+</div>
+<div class="controls-bar">
+<button class="btn btn-play" id="primPlayPrim">▶ 開始</button>
+<button class="btn btn-step" id="primStepPrim">→ 單步</button>
+<button class="btn btn-reset" id="primResetPrim">↺ 重置</button>
+</div>
+<div style="margin-top:.7rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;">
+<strong style="color:var(--accent2);">Priority Queue：</strong>
+<span class="ds-display" id="primPQPrim"><span class="ds-empty">empty</span></span>
+</div>
+</div>
+</div>
+<div class="side-panel">
+
+<div class="info-card">
+<div class="ic-title">MST 邊清單</div>
+<div id="primEdgesPrim" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;">—</div>
+</div>
+
+</div>
+</div>
+</div>
+<script>(function go(){ if(!window.DS08||!window.DS08.init){setTimeout(go,50);return;} window.DS08.init.prim(); })();</script>

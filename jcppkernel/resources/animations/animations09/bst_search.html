@@ -1,0 +1,58 @@
+<div class="ds09-anim" id="ds09-bst-search">
+<h3 style="margin-top:0;color:var(--accent2);">BST 搜尋 (get) — 沿樹下移比較 key</h3>
+<div class="viz-layout">
+<div>
+<div class="viz-panel">
+<div class="tree-canvas" id="canvas-bstSearch" style="height:280px;">
+<svg class="edges-layer"></svg>
+<div class="nodes-layer"></div>
+</div>
+<div class="status-banner"><span class="status-icon">›</span><span class="status-text" id="bstStatusSearch">輸入 key 後按 get 進行搜尋</span></div>
+<div class="input-row">
+<label>初始 keys：</label>
+<input id="bstInitInputSearch" type="text" value="70, 31, 93, 94, 14, 23, 73"/>
+<button class="btn btn-reset" id="bstApplyInitSearch">建立樹</button>
+<button class="btn btn-shuffle" id="bstShuffleSearch">隨機</button>
+</div>
+<div class="input-row">
+<label>搜尋 key：</label>
+<input id="bstOpKeySearch" style="width:80px;" type="number" value="23"/>
+<button class="btn btn-play" data-bstop="put">put (插入)</button>
+<button class="btn btn-play" data-bstop="get" style="background:var(--accent2);">get (搜尋)</button>
+</div>
+<div class="controls-bar">
+<button class="btn btn-step" id="bstStepSearch">→ 單步</button>
+<button class="btn btn-reset" id="bstResetSearch">↺ 重置</button>
+<div style="flex:1;min-width:160px;display:flex;align-items:center;gap:.5rem;">
+<span style="font-size:.78em;color:var(--muted);">速度</span>
+<input id="bstSpeedSearch" max="1800" min="200" step="100" style="flex:1;accent-color:var(--accent3);" type="range" value="700"/>
+</div>
+</div>
+</div>
+</div>
+<div class="side-panel">
+
+<div class="info-card">
+<div class="ic-title" id="bstCodeTitleSearch">虛擬碼 — _get <span class="ic-badge" style="background:var(--accent2)">CODE</span></div>
+<div class="pseudo-code" id="bstCodeSearch" style="font-size:.73em;">
+<span class="line"><span class="kw">#include</span> &lt;string&gt;</span>
+<span class="line"><span class="kw">struct</span> TreeNode {</span>
+<span class="line">    std::string key, value;</span>
+<span class="line">    TreeNode *leftChild = <span class="kw">nullptr</span>, *rightChild = <span class="kw">nullptr</span>;</span>
+<span class="line">};</span>
+<span class="line" data-l="1">TreeNode* <span class="fn">get</span>(<span class="kw">const</span> std::string&amp; key, TreeNode* currentNode) {</span>
+<span class="line" data-l="2">    <span class="kw">if</span> (currentNode == <span class="kw">nullptr</span>) <span class="kw">return</span> <span class="kw">nullptr</span>;</span>
+<span class="line" data-l="3">    <span class="kw">if</span> (currentNode->key == key)</span>
+<span class="line" data-l="4">        <span class="kw">return</span> currentNode;</span>
+<span class="line" data-l="5">    <span class="kw">if</span> (key &lt; currentNode->key)</span>
+<span class="line" data-l="6">        <span class="kw">return</span> <span class="fn">get</span>(key, currentNode->leftChild);</span>
+<span class="line" data-l="7">    <span class="kw">else</span></span>
+<span class="line" data-l="8">        <span class="kw">return</span> <span class="fn">get</span>(key, currentNode->rightChild);</span>
+<span class="line">}</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div style="display:none" data-ds09-shim="bst_search"><span id="bstOpNameSearch"></span><span id="bstResultSearch"></span><span id="bstCmpSearch"></span><span id="bstCurSearch"></span><span id="bstHeightSearch"></span><span id="bstSizeSearch"></span></div>
+<script>(function go(){ if(!window.DS09||!window.DS09.init){setTimeout(go,50);return;} window.DS09.init.bstSearch(); })();</script>
